@@ -66,7 +66,6 @@ def display_tenants(manager):
 if __name__ == '__main__':
     parameters = Parameters()
     manager = Manager(parameters)
-
     display_apartments(manager)
     display_tenants(manager)
     
