@@ -90,6 +90,7 @@ class ApartmentSettlement(BaseModel):
     total_rent_pln: float
     total_bills_pln: float
     total_due_pln: float
+    balance_pln: float
 
 
 class TenantSettlement(BaseModel):
