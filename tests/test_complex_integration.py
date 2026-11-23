@@ -4,6 +4,7 @@ from src.manager import Manager
 from src.models import ApartmentSettlement
 from src.models import Parameters
 from src.models import Bill
+from src.models import TenantSettlement
 
 def test_costs_for_missing_apartment():
     parameters = Parameters()
@@ -84,6 +85,19 @@ def test_apartment_costs_with_optional_parameters():
     assert costs == 3532.0
 
 
+def test_apartment_costs_with_invalid_month():
+    parameters = Parameters()
+    manager = Manager(parameters)
+
+    with pytest.raises(ValueError):
+        manager.get_apartment_costs('apart-polanka', 2025, 13)
+
+    with pytest.raises(ValueError):
+        manager.get_apartment_costs('apart-polanka', 2025, 0)
+
+    assert manager.get_apartment_costs('apart-polanka', 2025, 1) == 910.0
+
+
 def test_apartment_settlement_with_bills():
     parameters = Parameters()
     manager = Manager(parameters)
@@ -117,30 +131,56 @@ def test_apartment_settlement_without_bills():
     assert settlement.total_due_pln == settlement.total_rent_pln
 
 
-def test_apartment_settlement_balance_follows_bills():
+def test_tenant_settlements_for_many_tenants():
     parameters = Parameters()
     manager = Manager(parameters)
 
-    before = manager.get_apartment_settlement('apart-polanka', 2025, 1)
+    apartment_settlement = manager.get_apartment_settlement('apart-polanka', 2025, 1)
+    settlements = manager.get_tenant_settlements(apartment_settlement)
+    by_tenant = {settlement.tenant: settlement for settlement in settlements}
 
-    manager.bills.append(Bill(
-        amount_pln=90.0,
-        date_due='2025-02-20',
-        apartment='apart-polanka',
-        settlement_year=2025,
-        settlement_month=1,
-        type='water'
-    ))
-    after = manager.get_apartment_settlement('apart-polanka', 2025, 1)
+    expected_share = 910.0 / 3
 
-    assert after.total_bills_pln == before.total_bills_pln + 90.0
-    assert after.total_bills_pln == 1000.0
-    assert after.balance_pln == before.balance_pln - 90.0
-    assert after.balance_pln == 6500.0
+    assert len(settlements) == 3
+    assert all(isinstance(settlement, TenantSettlement) for settlement in settlements)
+    assert set(by_tenant) == {'tenant-1', 'tenant-2', 'tenant-3'}
+    assert all(settlement.year == 2025 for settlement in settlements)
+    assert all(settlement.month == 1 for settlement in settlements)
+    assert all(settlement.bills_pln == pytest.approx(expected_share) for settlement in settlements)
+    assert sum(settlement.bills_pln for settlement in settlements) == pytest.approx(910.0)
+    assert all(settlement.apartment_settlement == 'apart-polanka' for settlement in settlements)
+    assert by_tenant['tenant-1'].rent_pln == 1500.0
+    assert by_tenant['tenant-3'].rent_pln == 1300.0
+    assert by_tenant['tenant-1'].total_due_pln == pytest.approx(1500.0 + expected_share)
 
 
-def test_apartment_settlement_for_missing_apartment():
+def test_tenant_settlements_for_single_tenant():
     parameters = Parameters()
     manager = Manager(parameters)
 
-    assert manager.get_apartment_settlement('apart-nieistniejace', 2025, 1) is None
+    del manager.tenants['tenant-2']
+    del manager.tenants['tenant-3']
+
+    apartment_settlement = manager.get_apartment_settlement('apart-polanka', 2025, 1)
+    settlements = manager.get_tenant_settlements(apartment_settlement)
+
+    assert len(settlements) == 1
+    assert settlements[0].tenant == 'tenant-1'
+    assert settlements[0].bills_pln == 910.0
+    assert settlements[0].bills_pln == apartment_settlement.total_bills_pln
+    assert settlements[0].rent_pln == 1500.0
+    assert settlements[0].total_due_pln == 2410.0
+
+
+def test_tenant_settlements_without_tenants():
+    parameters = Parameters()
+    manager = Manager(parameters)
+
+    manager.tenants.clear()
+
+    apartment_settlement = manager.get_apartment_settlement('apart-polanka', 2025, 1)
+    settlements = manager.get_tenant_settlements(apartment_settlement)
+
+    assert settlements == []
+    assert len(settlements) == 0
+    assert apartment_settlement.total_bills_pln == 910.0

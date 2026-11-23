@@ -4,6 +4,7 @@ from src.models import (
     Bill,
     Parameters,
     Tenant,
+    TenantSettlement,
     Transfer,
 )
 
@@ -32,6 +33,9 @@ class Manager:
         return True
     
     def get_apartment_costs(self, apartment_key: str, year: int | None = None, month: int | None = None) -> float | None:
+        if month is not None and not 1 <= month <= 12:
+            raise ValueError(f"Invalid month: {month}")
+
         if apartment_key not in self.apartments:
             return None
 
@@ -80,3 +84,29 @@ class Manager:
             total_due_pln=total_rent + total_bills,
             balance_pln=total_transfers - total_bills,
         )
+
+    def get_tenant_settlements(self, apartment_settlement: ApartmentSettlement) -> list[TenantSettlement]:
+        tenant_keys = [
+            key for key, tenant in self.tenants.items()
+            if tenant.apartment == apartment_settlement.apartment
+        ]
+        if not tenant_keys:
+            return []
+
+        bills_share = apartment_settlement.total_bills_pln / len(tenant_keys)
+
+        settlements = []
+        for tenant_key in tenant_keys:
+            tenant = self.tenants[tenant_key]
+            settlements.append(TenantSettlement(
+                tenant=tenant_key,
+                apartment_settlement=apartment_settlement.apartment,
+                year=apartment_settlement.year,
+                month=apartment_settlement.month,
+                rent_pln=tenant.rent_pln,
+                bills_pln=bills_share,
+                total_due_pln=tenant.rent_pln + bills_share,
+                balance_pln=-bills_share,
+            ))
+
+        return settlements
